@@ -1,118 +1,122 @@
-/**
- * Carrier Maintenance Client - Complete Version
- * Version: 4.0
- */
 document.addEventListener('DOMContentLoaded', function() {
-    const CONFIG = {
-        API_URL: 'https://aliceblue-rabbit-873105.hostingersite.com/wp-json/carrier/v1/settings',
-        CACHE_KEY: 'carrier_numbers_v5',
-        CACHE_TTL: 3600000, // 1 hour
-        FALLBACK_NUMBERS: {
-            carrier_phone: '01112986699',
-            carrier_whatsapp: '01112986655'
-        }
-    };
+    const WORDPRESS_API_BASE = 'https://aliceblue-rabbit-873105.hostingersite.com/wp-json/carrier/v1';
+    
+    // 1. First update phone numbers
+    updatePhoneNumbers();
+    
+    // 2. Then load blog posts into tabs
+    loadBlogTabs();
 
-    // Initialize the application
-    init();
-
-    async function init() {
+    async function updatePhoneNumbers() {
         try {
-            const numbers = await getPhoneNumbers();
-            updateContactElements(numbers);
-        } catch (error) {
-            console.error('Carrier Maintenance Error:', error);
-            useFallbackNumbers();
-        }
-    }
-
-    async function getPhoneNumbers() {
-        // Try cache first
-        const cached = getCachedNumbers();
-        if (cached) return cached;
-        
-        try {
-            const response = await fetch(CONFIG.API_URL, {
-                method: 'GET',
-                mode: 'cors',
-                credentials: 'include',
-                headers: {
-                    'Content-Type': 'application/json'
+            const response = await fetch(`${WORDPRESS_API_BASE}/settings`);
+            if (!response.ok) throw new Error('Network response was not ok');
+            
+            const settings = await response.json();
+            
+            document.querySelectorAll('[data-carrier="phone"]').forEach(el => {
+                if (el) {
+                    el.href = `tel:${settings.phone}`;
+                    el.textContent = settings.phone; 
                 }
             });
             
-            if (!response.ok) {
-                throw new Error(`HTTP error! Status: ${response.status}`);
-            }
-            
-            const { success, data } = await response.json();
-            
-            if (!success || !data?.carrier_phone || !data?.carrier_whatsapp) {
-                throw new Error('Invalid API response format');
-            }
-            
-            cacheNumbers(data);
-            return data;
+            document.querySelectorAll('[data-carrier="whatsapp"]').forEach(el => {
+                if (el) {
+                    el.href = `https://wa.me/${settings.whatsapp}`;
+                    el.textContent = settings.whatsapp;
+                }
+            });
         } catch (error) {
-            console.error('API request failed:', error);
-            throw error;
+            console.error('Error updating phone numbers:', error);
         }
     }
 
-    function getCachedNumbers() {
+    async function loadBlogTabs() {
         try {
-            const stored = localStorage.getItem(CONFIG.CACHE_KEY);
-            if (!stored) return null;
-            
-            const { data, timestamp } = JSON.parse(stored);
-            
-            if (Date.now() - timestamp < CONFIG.CACHE_TTL) {
-                return data;
+            // Check if tabs section exists first
+            const tabsSection = document.getElementById('tabs');
+            if (!tabsSection) {
+                console.warn('Tabs section not found in DOM');
+                return;
             }
-            return null;
-        } catch (e) {
-            console.warn('Cache read failed:', e);
-            return null;
+            
+            const response = await fetch(`${WORDPRESS_API_BASE}/blogs?per_page=5`);
+            if (!response.ok) throw new Error('Failed to fetch blog posts');
+            
+            const posts = await response.json();
+            if (!posts || !posts.length) {
+                console.warn('No blog posts received');
+                return;
+            }
+            
+            // Safely find containers with null checks
+            const navTabs = tabsSection.querySelector('.nav-tabs');
+            const tabContent = tabsSection.querySelector('.tab-content');
+            
+            if (!navTabs || !tabContent) {
+                console.warn('Tab containers not found');
+                return;
+            }
+            
+            // Clear existing content
+            navTabs.innerHTML = '';
+            tabContent.innerHTML = '';
+            
+            // Create tabs for each blog post
+            posts.forEach((post, index) => {
+                const isActive = index === 0 ? 'active show' : '';
+                
+                // Create tab nav item
+                const tabNavItem = document.createElement('li');
+                tabNavItem.className = 'nav-item';
+                tabNavItem.innerHTML = `
+                    <a class="nav-link ${isActive}" data-bs-toggle="tab" href="#tab-${post.id}">
+                        ${post.title.substring(0, 15)}${post.title.length > 15 ? '...' : ''}
+                    </a>
+                `;
+                navTabs.appendChild(tabNavItem);
+                
+                // Create tab content
+                const tabPane = document.createElement('div');
+                tabPane.className = `tab-pane fade ${isActive}`;
+                tabPane.id = `tab-${post.id}`;
+                tabPane.innerHTML = `
+                    <div class="row">
+                        <div class="col-lg-8 details order-2 order-lg-1">
+                            <h3>${escapeHtml(post.title)}</h3>
+                            <p class="fst-italic">${post.excerpt || ''}</p>
+                            <div>${post.content}</div>
+                        </div>
+                        <div class="col-lg-4 text-center order-1 order-lg-2">
+                            ${post.thumbnail ? `<img src="${post.thumbnail}" alt="${escapeHtml(post.title)}" class="img-fluid">` : ''}
+                        </div>
+                    </div>
+                `;
+                tabContent.appendChild(tabPane);
+            });
+            
+        } catch (error) {
+            console.error('Error loading blog posts:', error);
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'alert alert-warning';
+            errorDiv.textContent = 'Unable to load blog content. Please try again later.';
+            
+            const container = document.querySelector('#tabs .container') || document.getElementById('tabs');
+            if (container) {
+                container.innerHTML = '';
+                container.appendChild(errorDiv);
+            }
         }
     }
 
-    function cacheNumbers(data) {
-        try {
-            localStorage.setItem(
-                CONFIG.CACHE_KEY,
-                JSON.stringify({
-                    data: data,
-                    timestamp: Date.now()
-                })
-            );
-        } catch (e) {
-            console.warn('Cache write failed:', e);
-        }
-    }
-
-    function updateContactElements(numbers) {
-        // Update phone links
-        document.querySelectorAll('[data-carrier="phone"]').forEach(el => {
-            if (el instanceof HTMLAnchorElement) {
-                el.href = `tel:${numbers.carrier_phone}`;
-                const currentText = el.textContent;
-                const newText = currentText.replace(/\d+/, numbers.carrier_phone);
-                el.textContent = newText;
-            }
-        });
-        
-        // Update WhatsApp links
-        document.querySelectorAll('[data-carrier="whatsapp"]').forEach(el => {
-            if (el instanceof HTMLAnchorElement) {
-                el.href = `https://wa.me/${numbers.carrier_whatsapp}`;
-                const currentText = el.textContent;
-                const newText = currentText.replace(/\d+/, numbers.carrier_whatsapp);
-                el.textContent = newText;
-            }
-        });
-    }
-
-    function useFallbackNumbers() {
-        updateContactElements(CONFIG.FALLBACK_NUMBERS);
+    function escapeHtml(unsafe) {
+        if (!unsafe) return '';
+        return unsafe.toString()
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
     }
 });
