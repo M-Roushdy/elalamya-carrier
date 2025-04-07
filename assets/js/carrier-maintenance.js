@@ -1,74 +1,111 @@
 document.addEventListener('DOMContentLoaded', function() {
-    // Fetch data from WordPress REST API
-    fetchCarrierData();
+    const WORDPRESS_API_BASE = 'https://aliceblue-rabbit-873105.hostingersite.com/wp-json/carrier/v1';
+    let currentBlogPage = 1;
     
-    // You can also set up periodic refreshes if needed
-    // setInterval(fetchCarrierData, 60000); // Refresh every minute
-});
-
-function fetchCarrierData() {
-    // Get both settings and departments in parallel
-    Promise.all([
-        fetch('/wp-json/carrier/v1/settings').then(res => res.json()),
-        fetch('/wp-json/carrier/v1/departments').then(res => res.json())
-    ])
-    .then(([settings, departments]) => {
-        // Update phone numbers
-        updatePhoneNumbers(settings);
-        
-        // Update departments
-        updateDepartments(departments);
-    })
-    .catch(error => {
-        console.error('Error fetching Carrier data:', error);
-    });
-}
-
-function updatePhoneNumbers(settings) {
-    // Update phone number elements
-    const phoneElements = document.querySelectorAll('[data-carrier="phone"]');
-    const whatsappElements = document.querySelectorAll('[data-carrier="whatsapp"]');
+    // Fetch initial data
+    fetchData();
     
-    phoneElements.forEach(el => {
-        if (el.tagName === 'A' && el.href.startsWith('tel:')) {
+    // Set up blog pagination if exists
+    document.getElementById('load-more-blogs')?.addEventListener('click', loadMoreBlogs);
+    
+    async function fetchData() {
+        try {
+            const [settings, blogs] = await Promise.all([
+                fetch(`${WORDPRESS_API_BASE}/settings`).then(res => res.json()),
+                fetch(`${WORDPRESS_API_BASE}/blogs?per_page=3`).then(res => res.json())
+            ]);
+            
+            updatePhoneNumbers(settings);
+            renderBlogPosts(blogs.posts);
+            
+            // Show/hide load more button
+            if (document.getElementById('load-more-blogs')) {
+                document.getElementById('load-more-blogs').style.display = 
+                    currentBlogPage < blogs.pages ? 'block' : 'none';
+            }
+            
+        } catch (error) {
+            console.error('Error fetching data:', error);
+            showError();
+        }
+    }
+    
+    async function loadMoreBlogs() {
+        currentBlogPage++;
+        try {
+            const response = await fetch(
+                `${WORDPRESS_API_BASE}/blogs?per_page=3&page=${currentBlogPage}`
+            );
+            const data = await response.json();
+            
+            renderBlogPosts(data.posts, true);
+            
+            // Hide button if no more posts
+            if (currentBlogPage >= data.pages) {
+                document.getElementById('load-more-blogs').style.display = 'none';
+            }
+            
+        } catch (error) {
+            console.error('Error loading more blogs:', error);
+            currentBlogPage--; // Revert page count on error
+        }
+    }
+    
+    function updatePhoneNumbers(settings) {
+        document.querySelectorAll('[data-carrier="phone"]').forEach(el => {
             el.href = `tel:${settings.phone}`;
-        }
-        el.textContent = settings.phone;
-    });
-    
-    whatsappElements.forEach(el => {
-        if (el.tagName === 'A' && el.href.startsWith('https://wa.me/')) {
+            el.textContent = settings.phone;
+        });
+        
+        document.querySelectorAll('[data-carrier="whatsapp"]').forEach(el => {
             el.href = `https://wa.me/${settings.whatsapp}`;
+            el.textContent = settings.whatsapp;
+        });
+    }
+    
+    function renderBlogPosts(posts, append = false) {
+        const container = document.getElementById('blogs-container');
+        if (!container) return;
+        
+        if (!append) {
+            container.innerHTML = '';
         }
-        el.textContent = settings.whatsapp;
-    });
-}
-
-function updateDepartments(departments) {
-    const container = document.getElementById('departments-container');
-    if (!container) return;
+        
+        posts.forEach(post => {
+            const blogElement = document.createElement('article');
+            blogElement.className = 'blog-post';
+            blogElement.innerHTML = `
+                <div class="blog-thumbnail">
+                    ${post.thumbnail ? `<img src="${post.thumbnail}" alt="${escapeHtml(post.title)}">` : ''}
+                </div>
+                <div class="blog-content">
+                    <h3><a href="${post.url}">${escapeHtml(post.title)}</a></h3>
+                    <div class="blog-meta">Posted on ${post.date}</div>
+                    <div class="blog-excerpt">${post.excerpt || ''}</div>
+                    <a href="${post.url}" class="read-more">Read More</a>
+                </div>
+            `;
+            container.appendChild(blogElement);
+        });
+    }
     
-    // Clear existing content
-    container.innerHTML = '';
+    function showError() {
+        const container = document.getElementById('blogs-container');
+        if (container) {
+            container.innerHTML = `
+                <div class="error-message">
+                    <p>Unable to load blog posts at this time. Please try again later.</p>
+                </div>
+            `;
+        }
+    }
     
-    // Add new departments
-    departments.forEach(dept => {
-        const deptElement = document.createElement('div');
-        deptElement.className = 'department';
-        deptElement.innerHTML = `
-            <h3>${escapeHtml(dept.title)}</h3>
-            <div>${dept.content}</div>
-        `;
-        container.appendChild(deptElement);
-    });
-}
-
-// Simple HTML escaping for security
-function escapeHtml(unsafe) {
-    return unsafe
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
-}
+    function escapeHtml(unsafe) {
+        return unsafe
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+});
