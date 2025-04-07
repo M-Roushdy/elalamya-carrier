@@ -1,6 +1,6 @@
 /**
- * Carrier Maintenance Client - Multi-Domain
- * Version: 3.0
+ * Carrier Maintenance Client - Complete Version
+ * Version: 3.1
  */
 document.addEventListener('DOMContentLoaded', function() {
     const CONFIG = {
@@ -8,19 +8,23 @@ document.addEventListener('DOMContentLoaded', function() {
         API_KEY: 'carrier_7a9b3f2d5e8c1b6a4d9f',
         CACHE_KEY: 'carrier_numbers_v3',
         CACHE_TTL: 3600000, // 1 hour
-        MAX_RETRIES: 3
+        MAX_RETRIES: 3,
+        RETRY_DELAY: 1000
     };
 
     // Main execution flow
     init();
-    
+
     async function init() {
         try {
             const numbers = await getPhoneNumbers();
             updateContactElements(numbers);
         } catch (error) {
-            console.error('Carrier Maintenance Error:', error.message);
-            fallbackToCache();
+            console.error('Carrier Maintenance Error:', error);
+            const cached = getCachedNumbers();
+            if (cached) {
+                updateContactElements(cached);
+            }
         }
     }
 
@@ -29,6 +33,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const cached = getCachedNumbers();
         if (cached) return cached;
         
+        // Configure CORS request
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 5000);
         
@@ -46,21 +51,51 @@ document.addEventListener('DOMContentLoaded', function() {
             clearTimeout(timeout);
             
             if (!response.ok) {
-                throw new Error(`API Error: ${response.status}`);
+                throw new Error(`HTTP error! Status: ${response.status}`);
             }
             
-            const data = await response.json();
+            const { success, data } = await response.json();
             
-            if (!data?.carrier_phone || !data?.carrier_whatsapp) {
-                throw new Error('Invalid response format');
+            if (!success || !data?.carrier_phone || !data?.carrier_whatsapp) {
+                throw new Error('Invalid API response format');
             }
             
             cacheNumbers(data);
             return data;
-            
         } catch (error) {
             clearTimeout(timeout);
             throw error;
+        }
+    }
+
+    function getCachedNumbers() {
+        try {
+            const stored = localStorage.getItem(CONFIG.CACHE_KEY);
+            if (!stored) return null;
+            
+            const { data, timestamp } = JSON.parse(stored);
+            
+            if (Date.now() - timestamp < CONFIG.CACHE_TTL) {
+                return data;
+            }
+            return null;
+        } catch (e) {
+            console.warn('Cache read failed:', e);
+            return null;
+        }
+    }
+
+    function cacheNumbers(data) {
+        try {
+            localStorage.setItem(
+                CONFIG.CACHE_KEY,
+                JSON.stringify({
+                    data: data,
+                    timestamp: Date.now()
+                })
+            );
+        } catch (e) {
+            console.warn('Cache write failed:', e);
         }
     }
 
@@ -85,6 +120,4 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     }
-
-    // ... [Keep remaining cache functions from previous version] ...
 });
