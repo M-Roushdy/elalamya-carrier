@@ -10,16 +10,22 @@ document.addEventListener('DOMContentLoaded', function() {
     async function updatePhoneNumbers() {
         try {
             const response = await fetch(`${WORDPRESS_API_BASE}/settings`);
+            if (!response.ok) throw new Error('Network response was not ok');
+            
             const settings = await response.json();
             
             document.querySelectorAll('[data-carrier="phone"]').forEach(el => {
-                el.href = `tel:${settings.phone}`;
-                el.textContent = settings.phone; 
+                if (el) {
+                    el.href = `tel:${settings.phone}`;
+                    el.textContent = settings.phone; 
+                }
             });
             
             document.querySelectorAll('[data-carrier="whatsapp"]').forEach(el => {
-                el.href = `https://wa.me/${settings.whatsapp}`;
-                el.textContent = settings.whatsapp;
+                if (el) {
+                    el.href = `https://wa.me/${settings.whatsapp}`;
+                    el.textContent = settings.whatsapp;
+                }
             });
         } catch (error) {
             console.error('Error updating phone numbers:', error);
@@ -28,16 +34,32 @@ document.addEventListener('DOMContentLoaded', function() {
 
     async function loadBlogTabs() {
         try {
+            // Check if tabs section exists first
+            const tabsSection = document.getElementById('tabs');
+            if (!tabsSection) {
+                console.warn('Tabs section not found in DOM');
+                return;
+            }
+            
             const response = await fetch(`${WORDPRESS_API_BASE}/blogs?per_page=5`);
+            if (!response.ok) throw new Error('Failed to fetch blog posts');
+            
             const posts = await response.json();
+            if (!posts || !posts.length) {
+                console.warn('No blog posts received');
+                return;
+            }
             
-            const tabsContainer = document.querySelector('#tabs .container');
-            if (!tabsContainer) return;
+            // Safely find containers with null checks
+            const navTabs = tabsSection.querySelector('.nav-tabs');
+            const tabContent = tabsSection.querySelector('.tab-content');
             
-            // Clear existing demo content but keep structure
-            const navTabs = tabsContainer.querySelector('.nav-tabs');
-            const tabContent = tabsContainer.querySelector('.tab-content');
+            if (!navTabs || !tabContent) {
+                console.warn('Tab containers not found');
+                return;
+            }
             
+            // Clear existing content
             navTabs.innerHTML = '';
             tabContent.innerHTML = '';
             
@@ -76,19 +98,21 @@ document.addEventListener('DOMContentLoaded', function() {
             
         } catch (error) {
             console.error('Error loading blog posts:', error);
-            document.getElementById('tabs').innerHTML = `
-                <div class="container">
-                    <div class="alert alert-warning">
-                        Unable to load blog content. Please try again later.
-                    </div>
-                </div>
-            `;
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'alert alert-warning';
+            errorDiv.textContent = 'Unable to load blog content. Please try again later.';
+            
+            const container = document.querySelector('#tabs .container') || document.getElementById('tabs');
+            if (container) {
+                container.innerHTML = '';
+                container.appendChild(errorDiv);
+            }
         }
     }
 
-    // Helper function to prevent XSS
     function escapeHtml(unsafe) {
-        return unsafe
+        if (!unsafe) return '';
+        return unsafe.toString()
             .replace(/&/g, "&amp;")
             .replace(/</g, "&lt;")
             .replace(/>/g, "&gt;")
