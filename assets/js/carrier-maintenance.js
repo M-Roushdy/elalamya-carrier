@@ -1,12 +1,12 @@
 /**
- * Carrier Maintenance Client
- * Version: 2.0
+ * Carrier Maintenance Client with CORS Fix
+ * Version: 2.1
  */
 document.addEventListener('DOMContentLoaded', function() {
     const CONFIG = {
         API_URL: 'https://aliceblue-rabbit-873105.hostingersite.com/wp-json/carrier/v1/settings',
-        API_KEY: 'carrier_7a9b3f2d5e8c1b6a4d9f', // Must match PHP secret
-        CACHE_KEY: 'carrier_numbers',
+        API_KEY: 'carrier_7a9b3f2d5e8c1b6a4d9f',
+        CACHE_KEY: 'carrier_numbers_v2',
         CACHE_TTL: 3600000 // 1 hour
     };
 
@@ -28,79 +28,56 @@ document.addEventListener('DOMContentLoaded', function() {
         const cached = getCachedNumbers();
         if (cached) return cached;
         
-        // Fetch fresh data
-        const response = await fetch(CONFIG.API_URL, {
+        // Configure CORS request
+        const corsOptions = {
+            method: 'GET',
+            mode: 'cors',
+            cache: 'no-cache',
+            credentials: 'omit',
             headers: {
                 'X-Carrier-Auth': CONFIG.API_KEY,
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
             }
-        });
+        };
         
-        if (!response.ok) {
-            throw new Error(`API Error: ${response.status}`);
-        }
-        
-        const data = await response.json();
-        
-        // Validate response
-        if (!data || !data.carrier_phone || !data.carrier_whatsapp) {
-            throw new Error('Invalid API response');
-        }
-        
-        // Cache the result
-        cacheNumbers(data);
-        
-        return data;
-    }
-
-    function updateContactElements(numbers) {
-        // Phone numbers
-        document.querySelectorAll('[data-carrier="phone"]').forEach(el => {
-            el.href = `tel:${numbers.carrier_phone}`;
-            el.textContent = el.textContent.replace(/\d+/, numbers.carrier_phone);
-        });
-        
-        // WhatsApp numbers
-        document.querySelectorAll('[data-carrier="whatsapp"]').forEach(el => {
-            el.href = `https://wa.me/${numbers.carrier_whatsapp}`;
-            el.textContent = el.textContent.replace(/\d+/, numbers.carrier_whatsapp);
-        });
-    }
-
-    function getCachedNumbers() {
         try {
-            const stored = localStorage.getItem(CONFIG.CACHE_KEY);
-            if (!stored) return null;
+            const response = await fetchWithRetry(CONFIG.API_URL, corsOptions);
             
-            const { data, timestamp } = JSON.parse(stored);
-            
-            if (Date.now() - timestamp < CONFIG.CACHE_TTL) {
-                return data;
+            if (!response.ok) {
+                throw new Error(`HTTP error! Status: ${response.status}`);
             }
-            return null;
-        } catch (e) {
-            return null;
+            
+            const data = await response.json();
+            
+            // Validate response structure
+            if (!data || !data.carrier_phone || !data.carrier_whatsapp) {
+                throw new Error('Invalid API response format');
+            }
+            
+            // Cache the result
+            cacheNumbers(data);
+            
+            return data;
+        } catch (error) {
+            console.error('API Request Failed:', error);
+            throw error;
         }
     }
 
-    function cacheNumbers(data) {
+    async function fetchWithRetry(url, options, retries = 3) {
         try {
-            localStorage.setItem(
-                CONFIG.CACHE_KEY,
-                JSON.stringify({
-                    data: data,
-                    timestamp: Date.now()
-                })
-            );
-        } catch (e) {
-            console.warn('Failed to cache numbers:', e);
+            const response = await fetch(url, options);
+            return response;
+        } catch (error) {
+            if (retries > 0) {
+                console.log(`Retrying... ${retries} attempts left`);
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                return fetchWithRetry(url, options, retries - 1);
+            }
+            throw error;
         }
     }
 
-    function fallbackToCache() {
-        const cached = getCachedNumbers();
-        if (cached) {
-            updateContactElements(cached);
-        }
-    }
+    // ... [Keep the remaining functions from previous version unchanged] ...
 });
